@@ -1,3 +1,4 @@
 logs.txt
 config.py
 __pycache__
+.DS_Store
