@@ -1,6 +1,7 @@
 import sharesies
 import yfinance
 from time import sleep
+import time
 from tqdm import tqdm
 from stockwatch import Market, util
 import config
@@ -11,17 +12,22 @@ def perform_selling(client, portfolio, companies, dividends):
 
     for company in portfolio:
         fund_id = company['fund_id']
+        code = util.get_code_from_id(fund_id, companies)
 
         contribution = float(company['contribution'])
         current_value = float(company['value'])
 
         # does company give dividends?
         if fund_id in dividends:
-            util.log(f'Not selling {fund_id}:{code} due to dividends')
+            util.log(f'Not selling {fund_id}: {code} due to dividends')
             continue
 
+        print(f'Considering selling {code}')
+        should_sell = Market.should_sell(contribution, current_value)
+        print(should_sell)
+
         # sell if we're making a profit
-        if Market.should_sell(contribution, current_value):
+        if should_sell:
             code = util.get_code_from_id(fund_id, companies)
             util.log(f'Selling ${current_value} of {code}')
             client.sell(company, float(company['shares']))
@@ -41,13 +47,23 @@ def perform_buying(client, investments, companies, balance):
         if price < config.minimum_stock_price:
             continue
 
+        c = company['code']
+        sleep(2)
+        print()
+        print(f'Considering buying {c}')
+
         symbol = company['code'] + '.NZ'
         stock = yfinance.Ticker(symbol)
-        history = stock.history(period='1mo', interval='15m')
+        try:
+            history = stock.history(period='1mo', interval='15m')
+        except RuntimeError:
+            print('Probably not enough data at this resolution. Skipping')
+            continue
 
         # buy if it is a bargain
-        if Market.should_buy(price, history, 0.4):
-
+        should_buy = Market.should_buy(price, history, 0.4) # 0.4 is margin %, i.e. 0.4%
+        print(should_buy)
+        if should_buy:
             buy_amount = config.buy_amount
 
             # value shares more as dividends are upcoming
@@ -67,23 +83,27 @@ def perform_buying(client, investments, companies, balance):
             balance -= buy_amount
 
 
-def scan_market(client):
+def scan_market(client, t):
     ''' Scan market to make informed buy/sell decisions '''
+
+    REQUESTS_PER_SECOND = 2000/24/60/60
 
     profile = client.get_profile()
 
     # gather the information
-    balance = float(profile['user']['wallet_balance'])
+    balance = float(profile['user']['wallet_balances']['nzd'])
     portfolio = profile['portfolio']
     dividends = profile['upcoming_dividends']
 
     investments = util.get_fund_ids(portfolio)
     companies = client.get_companies()
 
+    if (time.time() - t) <= REQUESTS_PER_SECOND:
+        sleep(REQUESTS_PER_SECOND)
+
     # it's show time
     perform_selling(client, portfolio, companies, dividends)
     perform_buying(client, investments, companies, balance)
-
 
 if __name__ == '__main__':
 
@@ -97,17 +117,26 @@ if __name__ == '__main__':
     else:
         util.log('Failed to login', error=True)
 
+    debug = False
+
     # trade loop
     while True:
         minutes_till_open = Market.minutes_till_trading()
 
         if minutes_till_open == 0:
             util.log('Market is currently open!')
-            scan_market(client)
+            scan_market(client, time.time())
 
             util.log(f'Scanned market - next scan in {config.scan_interval}m')
             sleep(config.scan_interval * 60)
 
         else:
-            util.log(f'Waiting {round(minutes_till_open/60, 2)}h till reopen')
-            sleep(minutes_till_open * 60)
+            print('Market currently closed')
+            debug_flag = input('Enter debug mode? y/n/w: ')
+            if debug_flag == 'y':
+                scan_market(client, time.time())
+            elif debug_flag == 'n':
+                exit()
+            elif debug_flag == 'w':
+                util.log(f'Waiting {round(minutes_till_open/60, 2)}h till reopen')
+                sleep(minutes_till_open * 60)

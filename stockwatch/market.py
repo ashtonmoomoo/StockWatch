@@ -1,6 +1,7 @@
 import numpy as np
 from stockwatch import util
 from datetime import datetime, timedelta
+from time import sleep
 import config
 
 
@@ -28,7 +29,7 @@ class Market:
         try:
             # calculate vwap
             history = history.groupby(history.index.date, group_keys=False)
-            history = history.apply(Market.vwap)
+            history = history.apply(Market.vwap).fillna(0) ## Fill NaN's in df with 0's
 
             # calculate direction
             moves = np.gradient(history['vwap'])
@@ -39,8 +40,13 @@ class Market:
             margin_price = history['vwap'][-1]
             margin_price -= (margin_price * (margin_percent/100))
 
+            print(f'median:\t {median:.4g}')
+            print(f'averag:\t {average:.4g}')
+            print(f'market:\t {market_price:.4g}')
+            print(f'margin:\t {margin_price:.4g}')
+
             # agree if going up and below margin
-            if median > 0 and average > 0 and market_price <= margin_price:
+            if median > 0 and average > 0 and market_price <= margin_price: # might like to consider changing the 0's?
                 return True
 
         except Exception as e:
