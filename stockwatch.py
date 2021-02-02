@@ -123,6 +123,11 @@ if __name__ == '__main__':
     while True:
         minutes_till_open = Market.minutes_till_trading()
 
+        dry = input('Dry run? y/n? ')
+        if dry == 'y':
+            scan_market(client, time.time())
+            exit()
+
         if minutes_till_open == 0:
             util.log('Market is currently open!')
             scan_market(client, time.time())
